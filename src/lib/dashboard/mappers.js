@@ -24,21 +24,34 @@ export function isActiveOrderStatus(status) {
 }
 
 export function mapCartItemFromApi(item) {
+  const isCustom = item.itemType === 'custom';
+
   return {
+    itemType: item.itemType || 'product',
+    customItemId: item.customItemId || null,
     name: item.name,
     price: item.unitPrice,
-    href: '/products',
+    href: isCustom ? '/dashboard/custom' : '/products',
     image: item.image || item.images?.[0] || null,
     tags: item.tags || [],
     currency: CURRENCY,
-    productId: item.productId,
+    productId: item.productId || null,
     quantity: item.quantity,
     customText: item.customText || '',
     color: item.color || null,
+    fileName: item.fileName || null,
+    fileUrl: item.fileUrl || null,
+    material: item.material || null,
+    estimatedWeight: item.estimatedWeight ?? null,
   };
 }
 
 function formatOrderItemSummary(item) {
+  if (item.itemType === 'custom') {
+    const materialName = item.material?.name ? ` (${item.material.name})` : '';
+    return `Custom print — ${item.name || item.fileName}${materialName}`;
+  }
+
   const base = `${item.quantity}x ${item.name}`;
   const details = [];
 

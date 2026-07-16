@@ -1,18 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Section from '@/components/layout/Section';
 import SectionHeader from '@/components/ui/SectionHeader';
+import { useApi } from '@/components/providers/ApiProvider';
 import { useMaterials } from '@/components/providers/SiteSettingsProvider';
 import { parseModelFile, calculateQuote } from '@/lib/quote/calculateQuote';
 import {
   saveCustomOrderFile,
   PENDING_CUSTOM_FILE_KEY,
 } from '@/lib/quote/customOrderFileStore';
+import { addCustomQuoteToCart } from '@/lib/quote/addCustomToCart';
+import { loginPath } from '@/lib/auth-redirect';
 import { useToast } from '@/components/providers/ToastProvider';
 
-export const CUSTOM_ORDER_KEY = 'toolify_custom_order';
+export const PENDING_CUSTOM_QUOTE_KEY = 'toolify_pending_custom_quote';
 
 const ACCEPTED_TYPES = ['.stl', '.obj'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
@@ -70,12 +73,24 @@ const THEMES = {
   },
 };
 
-// Rough print-time heuristic. Volume/weight alone cannot yield slicer-accurate
-// timing, so this is labelled as an estimate in the UI.
 function estimatePrintTime(weight) {
   if (!weight) return null;
   const hours = Math.max(0.5, weight / 12);
   return `${hours.toFixed(1)} hrs`;
+}
+
+function buildQuotePayload(file, activeMaterial, volumeCm3, quote) {
+  return {
+    fileType: `.${file.name.split('.').pop()?.toLowerCase()}`,
+    material: {
+      id: activeMaterial.id,
+      name: activeMaterial.fullName || activeMaterial.name,
+    },
+    volumeCm3,
+    weight: quote?.estimatedWeight ?? null,
+    pricePerGram: quote?.pricePerGram ?? activeMaterial.costPerGram,
+    total: quote?.totalCost ?? 0,
+  };
 }
 
 export default function QuoteCalculator({
@@ -86,11 +101,13 @@ export default function QuoteCalculator({
   eyebrow = '// QUOTE_ENGINE_V1',
   title = 'Upload. Select. Get Price.',
   description = 'Drop your STL, pick a material, and get an instant estimate before checkout.',
-  checkoutLabel = 'Proceed to Checkout',
+  checkoutLabel = 'Add to Cart',
   className = '',
 }) {
   const t = THEMES[theme] ?? THEMES.light;
   const router = useRouter();
+  const pathname = usePathname();
+  const { session, tokenReady, refreshCart } = useApi();
   const { showToast } = useToast();
   const { materials, discountsEnabled, weightBreakpointsG, loading: materialsLoading } = useMaterials();
   const fileInputRef = useRef(null);
@@ -98,6 +115,7 @@ export default function QuoteCalculator({
   const [volumeCm3, setVolumeCm3] = useState(null);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [fileError, setFileError] = useState('');
 
   useEffect(() => {
@@ -173,34 +191,37 @@ export default function QuoteCalculator({
   };
 
   const handlePlaceOrder = async () => {
-    if (!uploadedFile || !estimatedWeight) {
+    if (!uploadedFile || !estimatedWeight || !activeMaterial) {
       setFileError('Upload a project file before placing your order.');
       return;
     }
 
-    // Hold the raw file in the browser (IndexedDB); it is only uploaded to
-    // Firebase Storage when the user confirms checkout from the dashboard cart.
-    await saveCustomOrderFile(PENDING_CUSTOM_FILE_KEY, uploadedFile);
+    const quotePayload = buildQuotePayload(uploadedFile, activeMaterial, volumeCm3, quote);
 
-    sessionStorage.setItem(
-      CUSTOM_ORDER_KEY,
-      JSON.stringify({
-        type: 'custom',
-        fileKey: PENDING_CUSTOM_FILE_KEY,
-        fileName: uploadedFile.name,
-        fileSize: uploadedFile.size,
-        fileType: `.${uploadedFile.name.split('.').pop()?.toLowerCase()}`,
-        material: { id: activeMaterial.id, name: activeMaterial.fullName || activeMaterial.name },
-        filament: activeMaterial.fullName || activeMaterial.name,
-        volumeCm3,
-        weight: estimatedWeight,
-        pricePerGram: quote?.pricePerGram ?? activeMaterial.costPerGram,
-        total: totalPrice,
-        placedAt: Date.now(),
-      })
-    );
+    if (!session?.user) {
+      await saveCustomOrderFile(PENDING_CUSTOM_FILE_KEY, uploadedFile);
+      sessionStorage.setItem(PENDING_CUSTOM_QUOTE_KEY, JSON.stringify(quotePayload));
+      router.push(loginPath(pathname || '/'));
+      return;
+    }
 
-    router.push(checkoutHref);
+    if (!tokenReady) {
+      showToast('Preparing your session. Try again in a moment.', 'error');
+      return;
+    }
+
+    setIsAddingToCart(true);
+
+    try {
+      const fileName = await addCustomQuoteToCart(session.user.id, uploadedFile, quotePayload);
+      await refreshCart();
+      showToast(`${fileName} added to cart.`, 'success');
+      router.push(checkoutHref);
+    } catch (err) {
+      showToast(err.message || 'Failed to add custom project to cart.', 'error');
+    } finally {
+      setIsAddingToCart(false);
+    }
   };
 
   const weightDisplay = isAnalyzing
@@ -209,6 +230,7 @@ export default function QuoteCalculator({
       ? `${estimatedWeight} g`
       : '-- g';
   const timeDisplay = isAnalyzing ? '-- hrs' : printTime ?? '-- hrs';
+  const isBusy = isAnalyzing || isAddingToCart || materialsLoading;
 
   const calculator = (
     <div className={`max-w-4xl mx-auto rounded-xl p-sm md:p-md ${t.card} ${className}`}>
@@ -331,10 +353,10 @@ export default function QuoteCalculator({
             <button
               type="button"
               onClick={handlePlaceOrder}
-              disabled={isAnalyzing || materialsLoading || !activeMaterial}
+              disabled={isBusy || !activeMaterial}
               className="w-full bg-brand text-white py-sm mt-md font-bold uppercase rounded-lg hover:brightness-110 transition-all flex items-center justify-center gap-xs disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <span>{checkoutLabel}</span>
+              <span>{isAddingToCart ? 'Adding to Cart...' : checkoutLabel}</span>
               <span className="material-symbols-outlined">arrow_forward</span>
             </button>
             <p className={`font-mono text-[10px] mt-sm leading-tight ${t.panelLabel}`}>

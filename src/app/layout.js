@@ -1,11 +1,70 @@
 import { ApiProvider } from "@/components/providers/ApiProvider";
 import { SiteSettingsProvider } from "@/components/providers/SiteSettingsProvider";
 import { ToastProvider } from "@/components/providers/ToastProvider";
+import PendingCustomQuoteResume from "@/components/providers/PendingCustomQuoteResume";
+import JsonLd from "@/components/seo/JsonLd";
+import { SITE, SITE_URL } from "@/lib/seo/site";
+import { organizationSchema } from "@/lib/seo/schema";
 import "./globals.css";
 
 export const metadata = {
-  title: "Toolify 3D — Your Imagination Printed",
-  description: "High-precision additive manufacturing for engineers, artists, and creators. Bangladesh's premier 3D printing service.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: `${SITE.name} — ${SITE.tagline}`,
+    template: `%s | ${SITE.name}`,
+  },
+  description: SITE.description,
+  applicationName: SITE.name,
+  keywords: SITE.keywords,
+  authors: [{ name: SITE.name, url: SITE_URL }],
+  creator: SITE.name,
+  publisher: SITE.name,
+  category: "technology",
+  alternates: {
+    canonical: "/",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+      "max-video-preview": -1,
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    siteName: SITE.name,
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
+    url: SITE_URL,
+    locale: SITE.locale,
+    images: [
+      {
+        url: SITE.ogImage,
+        width: 1200,
+        height: 630,
+        alt: `${SITE.name} — ${SITE.tagline}`,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${SITE.name} — ${SITE.tagline}`,
+    description: SITE.description,
+    images: [SITE.ogImage],
+  },
+  icons: {
+    icon: [{ url: SITE.logo, type: "image/png" }],
+    apple: [{ url: SITE.logo }],
+  },
+  formatDetection: {
+    email: false,
+    address: false,
+    telephone: false,
+  },
 };
 
 export default function RootLayout({ children }) {
@@ -24,9 +83,13 @@ export default function RootLayout({ children }) {
         />
       </head>
       <body className="min-h-screen flex flex-col">
+        <JsonLd schema={organizationSchema()} />
         <ApiProvider>
           <SiteSettingsProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <ToastProvider>
+              <PendingCustomQuoteResume />
+              {children}
+            </ToastProvider>
           </SiteSettingsProvider>
         </ApiProvider>
       </body>

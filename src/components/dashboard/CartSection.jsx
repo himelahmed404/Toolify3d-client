@@ -1,12 +1,11 @@
 import Link from 'next/link';
-import CartItemRow from './CartItemRow';
+import CartItemRow, { getCartItemKey } from './CartItemRow';
 import { formatPrice } from '@/lib/dashboard/mappers';
 
 const SHIPPING_FLAT = 5.0;
 
 export default function CartSection({
   cartItems,
-  orderNotice,
   isCheckingOut,
   onQuantityChange,
   onRemove,
@@ -22,11 +21,6 @@ export default function CartSection({
 
   return (
     <section className="dashboard-reveal lg:col-span-7 flex flex-col gap-6">
-      {orderNotice && (
-        <div className="font-mono text-sm text-primary border border-primary/30 bg-primary/5 px-4 py-3 rounded-sm uppercase">
-          {orderNotice}
-        </div>
-      )}
       <div className="flex items-baseline gap-2 justify-between">
         <span className="text-primary-container font-mono text-sm tracking-wide">
           {'// ACTIVE_CART'}
@@ -52,7 +46,7 @@ export default function CartSection({
             <div className="flex flex-col gap-4">
               {cartItems.map((item) => (
                 <CartItemRow
-                  key={`${item.productId || 'custom'}-${item.customText || ''}-${item.color?.hex || ''}`}
+                  key={getCartItemKey(item)}
                   item={item}
                   onQuantityChange={onQuantityChange}
                   onRemove={onRemove}

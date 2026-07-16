@@ -1,5 +1,12 @@
 import { formatPrice } from '@/lib/dashboard/mappers';
 
+function getCartItemKey(item) {
+  if (item.itemType === 'custom') {
+    return `custom-${item.customItemId}`;
+  }
+  return `product-${item.productId}-${item.customText || ''}-${item.color?.hex || ''}`;
+}
+
 export default function CartItemRow({
   item,
   onQuantityChange,
@@ -8,6 +15,7 @@ export default function CartItemRow({
   loadingProductId,
 }) {
   const {
+    itemType,
     productId,
     name,
     price,
@@ -17,8 +25,13 @@ export default function CartItemRow({
     quantity,
     customText,
     color,
+    fileName,
+    fileUrl,
+    material,
+    estimatedWeight,
   } = item;
 
+  const isCustom = itemType === 'custom';
   const isLoadingProduct = loadingProductId === productId;
 
   return (
@@ -43,7 +56,31 @@ export default function CartItemRow({
             <span className="font-display text-lg font-semibold text-on-surface truncate">
               {name}
             </span>
-            {color?.label || customText ? (
+            {isCustom ? (
+              <div className="flex flex-col gap-1">
+                <span className="font-mono text-[10px] uppercase text-primary tracking-widest">
+                  Custom STL
+                </span>
+                {material?.name ? (
+                  <span className="text-sm text-on-surface-variant">{material.name}</span>
+                ) : null}
+                {estimatedWeight != null ? (
+                  <span className="text-sm text-on-surface-variant">{estimatedWeight}g estimated</span>
+                ) : null}
+                {fileName && fileUrl ? (
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-xs text-primary hover:text-primary-container transition-colors uppercase inline-flex items-center gap-1 w-fit"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">attach_file</span>
+                    {fileName}
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+            {!isCustom && (color?.label || customText) ? (
               <div className="bg-white p-2 rounded-sm border border-outline-variant flex items-center gap-2 flex-wrap">
                 {color?.label ? (
                   <span className="inline-flex items-center gap-1.5 text-sm text-on-surface-variant">
@@ -65,7 +102,7 @@ export default function CartItemRow({
                 ) : null}
               </div>
             ) : null}
-            {productId ? (
+            {!isCustom && productId ? (
               <button
                 type="button"
                 onClick={() => onViewProduct?.(productId)}
@@ -95,14 +132,7 @@ export default function CartItemRow({
           <div className="flex items-center border border-outline-variant rounded-sm bg-white h-8">
             <button
               type="button"
-              onClick={() =>
-                onQuantityChange(
-                  productId,
-                  Math.max(1, quantity - 1),
-                  customText,
-                  color?.hex
-                )
-              }
+              onClick={() => onQuantityChange(item, Math.max(1, quantity - 1))}
               className="px-2 hover:bg-surface-variant hover:text-primary transition-colors"
               aria-label="Decrease quantity"
             >
@@ -113,9 +143,7 @@ export default function CartItemRow({
             </span>
             <button
               type="button"
-              onClick={() =>
-                onQuantityChange(productId, quantity + 1, customText, color?.hex)
-              }
+              onClick={() => onQuantityChange(item, quantity + 1)}
               className="px-2 hover:bg-surface-variant hover:text-primary transition-colors"
               aria-label="Increase quantity"
             >
@@ -124,7 +152,7 @@ export default function CartItemRow({
           </div>
           <button
             type="button"
-            onClick={() => onRemove(productId, customText, color?.hex)}
+            onClick={() => onRemove(item)}
             className="text-on-surface-variant hover:text-error transition-colors"
             aria-label="Remove item"
           >
@@ -135,3 +163,5 @@ export default function CartItemRow({
     </div>
   );
 }
+
+export { getCartItemKey };

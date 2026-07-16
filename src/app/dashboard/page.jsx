@@ -29,7 +29,6 @@ export default function DashboardPage() {
     userEmail,
     cartItems,
     orders,
-    orderNotice,
     isCheckingOut,
     isLoggingOut,
     handleQuantityChange,
@@ -118,7 +117,6 @@ export default function DashboardPage() {
 
           <CartSection
             cartItems={cartItems}
-            orderNotice={orderNotice}
             isCheckingOut={isCheckingOut}
             onQuantityChange={handleQuantityChange}
             onRemove={handleRemoveCartItem}

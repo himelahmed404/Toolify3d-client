@@ -13,13 +13,6 @@ import {
   mapOrderForDisplay,
   mapCustomOrderForDisplay,
 } from '@/lib/dashboard/mappers';
-import { getInitialCustomOrderState } from '@/lib/dashboard/customOrder';
-import { CUSTOM_ORDER_KEY } from '@/components/home/QuoteCalculator';
-import {
-  getCustomOrderFile,
-  clearCustomOrderFile,
-} from '@/lib/quote/customOrderFileStore';
-import { uploadCustomOrderFile } from '@/lib/firebase/uploadCustomOrderFile';
 
 const EMPTY_PROFILE = {
   imageUrl: '',
@@ -28,8 +21,6 @@ const EMPTY_PROFILE = {
   address: '',
 };
 
-// Merges regular product orders with custom STL orders into a single history
-// list, most recent first.
 function mergeOrders(ordersData, customData) {
   return [
     ...ordersData.map(mapOrderForDisplay),
@@ -39,6 +30,7 @@ function mergeOrders(ordersData, customData) {
 
 function matchesCartItem(item, productId, customText = '', colorHex = '') {
   return (
+    item.itemType !== 'custom' &&
     item.productId === productId &&
     (item.customText || '') === (customText || '') &&
     (item.color?.hex || '').toLowerCase() === (colorHex || '').toLowerCase()
@@ -58,17 +50,12 @@ export function useDashboardData() {
   const pathname = usePathname();
   const { session, isPending, tokenReady, refreshCart } = useApi();
   const { showToast } = useToast();
-  const [customOrderState] = useState(getInitialCustomOrderState);
-  const isCustomOrder = Boolean(customOrderState);
 
-  const [isLoading, setIsLoading] = useState(!customOrderState);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [profile, setProfile] = useState(EMPTY_PROFILE);
-  const [cartItems, setCartItems] = useState(
-    customOrderState ? [customOrderState.cartItem] : []
-  );
+  const [cartItems, setCartItems] = useState([]);
   const [orders, setOrders] = useState([]);
-  const [orderNotice] = useState(customOrderState?.orderNotice ?? '');
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [viewingProduct, setViewingProduct] = useState(null);
@@ -89,20 +76,16 @@ export function useDashboardData() {
     if (!tokenReady) return;
 
     async function loadDashboardData() {
-      if (!customOrderState) setIsLoading(true);
+      setIsLoading(true);
       setLoadError('');
 
       try {
-        const requests = [
+        const [profileData, ordersData, customData, cartData] = await Promise.all([
           apiFetch('/profile'),
           apiFetch('/orders'),
           apiFetch('/orders/custom'),
-        ];
-        if (!customOrderState) requests.push(apiFetch('/cart'));
-
-        const [profileData, ordersData, customData, cartData] = await Promise.all(
-          requests
-        );
+          apiFetch('/cart'),
+        ]);
 
         if (!hasPhoneNumber(session, profileData)) {
           router.replace(
@@ -118,11 +101,7 @@ export function useDashboardData() {
           address: profileData.address || '',
         });
         setOrders(mergeOrders(ordersData, customData));
-
-        if (!customOrderState) {
-          setCartItems((cartData.items || []).map(mapCartItemFromApi));
-        }
-
+        setCartItems((cartData.items || []).map(mapCartItemFromApi));
         await refreshCart();
       } catch (err) {
         setLoadError(err.message || 'Failed to load dashboard. Is the backend running?');
@@ -132,70 +111,78 @@ export function useDashboardData() {
     }
 
     loadDashboardData();
-  }, [tokenReady, customOrderState, refreshCart, session, router, pathname]);
+  }, [tokenReady, refreshCart, session, router, pathname]);
 
   const handleQuantityChange = useCallback(
-    async (productId, nextQuantity, customText = '', colorHex = '') => {
+    async (item, nextQuantity) => {
       setCartItems((prev) =>
-        prev.map((item) =>
-          matchesCartItem(item, productId, customText, colorHex)
-            ? { ...item, quantity: nextQuantity }
-            : item
-        )
+        prev.map((cartItem) => {
+          if (item.itemType === 'custom') {
+            return cartItem.customItemId === item.customItemId
+              ? { ...cartItem, quantity: nextQuantity }
+              : cartItem;
+          }
+          return matchesCartItem(cartItem, item.productId, item.customText, item.color?.hex)
+            ? { ...cartItem, quantity: nextQuantity }
+            : cartItem;
+        })
       );
 
-      if (!productId || isCustomOrder) return;
-
       try {
-        const body = { quantity: nextQuantity };
-        if (customText) {
-          body.customText = customText;
-        }
-        if (colorHex) {
-          body.colorHex = colorHex;
-        }
+        if (item.itemType === 'custom') {
+          await apiFetch(`/cart/custom-items/${item.customItemId}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ quantity: nextQuantity }),
+          });
+        } else if (item.productId) {
+          const body = { quantity: nextQuantity };
+          if (item.customText) body.customText = item.customText;
+          if (item.color?.hex) body.colorHex = item.color.hex;
 
-        await apiFetch(`/cart/items/${productId}`, {
-          method: 'PATCH',
-          body: JSON.stringify(body),
-        });
+          await apiFetch(`/cart/items/${item.productId}`, {
+            method: 'PATCH',
+            body: JSON.stringify(body),
+          });
+        }
         await refreshCart();
       } catch (err) {
         console.error('Failed to update cart quantity:', err);
       }
     },
-    [isCustomOrder, refreshCart]
+    [refreshCart]
   );
 
   const handleRemoveCartItem = useCallback(
-    async (productId, customText = '', colorHex = '') => {
+    async (item) => {
       setCartItems((prev) =>
-        prev.filter((item) => !matchesCartItem(item, productId, customText, colorHex))
+        prev.filter((cartItem) => {
+          if (item.itemType === 'custom') {
+            return cartItem.customItemId !== item.customItemId;
+          }
+          return !matchesCartItem(
+            cartItem,
+            item.productId,
+            item.customText,
+            item.color?.hex
+          );
+        })
       );
 
-      if (!productId || isCustomOrder) {
-        if (isCustomOrder && customOrderState?.order) {
-          sessionStorage.removeItem(CUSTOM_ORDER_KEY);
-          try {
-            await clearCustomOrderFile(customOrderState.order.fileKey);
-          } catch (err) {
-            console.error('Failed to clear custom order file:', err);
-          }
-        }
-        return;
-      }
-
       try {
-        await apiFetch(
-          `/cart/items/${productId}${buildCartItemQuery(customText, colorHex)}`,
-          { method: 'DELETE' }
-        );
+        if (item.itemType === 'custom') {
+          await apiFetch(`/cart/custom-items/${item.customItemId}`, { method: 'DELETE' });
+        } else if (item.productId) {
+          await apiFetch(
+            `/cart/items/${item.productId}${buildCartItemQuery(item.customText, item.color?.hex)}`,
+            { method: 'DELETE' }
+          );
+        }
         await refreshCart();
       } catch (err) {
         console.error('Failed to remove cart item:', err);
       }
     },
-    [isCustomOrder, customOrderState, refreshCart]
+    [refreshCart]
   );
 
   const handleSaveProfile = useCallback(async (nextProfile) => {
@@ -217,80 +204,7 @@ export function useDashboardData() {
     }
   }, []);
 
-  const handleCustomCheckout = useCallback(async () => {
-    const order = customOrderState?.order;
-    if (!order) return;
-
-    if (!displayProfile.address || !displayProfile.phone) {
-      showToast(
-        'Please add your shipping address and phone before checkout.',
-        'error'
-      );
-      return;
-    }
-
-    setIsCheckingOut(true);
-
-    try {
-      const file = await getCustomOrderFile(order.fileKey);
-      if (!file) {
-        throw new Error('Your uploaded file was lost. Please re-upload and try again.');
-      }
-
-      // Upload the printable file straight to Firebase Storage; only the
-      // returned URL is stored in MongoDB.
-      const { fileUrl, storagePath, fileSize, fileName } = await uploadCustomOrderFile(
-        session.user.id,
-        file
-      );
-
-      const created = await apiFetch('/orders/custom', {
-        method: 'POST',
-        body: JSON.stringify({
-          fileName,
-          fileUrl,
-          storagePath,
-          fileSize,
-          fileType: order.fileType,
-          material: order.material,
-          volumeCm3: order.volumeCm3,
-          estimatedWeight: order.weight,
-          pricePerGram: order.pricePerGram,
-          totalCost: order.total,
-          shippingAddress: {
-            name: displayProfile.name,
-            phone: displayProfile.phone,
-            address: displayProfile.address,
-          },
-        }),
-      });
-
-      await clearCustomOrderFile(order.fileKey);
-      sessionStorage.removeItem(CUSTOM_ORDER_KEY);
-      setCartItems([]);
-      showToast(
-        `Order ${created.orderNumber} placed. Payment on delivery — awaiting confirmation.`,
-        'success'
-      );
-
-      const [ordersData, customData] = await Promise.all([
-        apiFetch('/orders'),
-        apiFetch('/orders/custom'),
-      ]);
-      setOrders(mergeOrders(ordersData, customData));
-    } catch (err) {
-      showToast(err.message || 'Checkout failed', 'error');
-    } finally {
-      setIsCheckingOut(false);
-    }
-  }, [customOrderState, displayProfile, session, showToast]);
-
   const handleCheckout = useCallback(async () => {
-    if (isCustomOrder) {
-      await handleCustomCheckout();
-      return;
-    }
-
     if (!cartItems.length) return;
 
     if (!displayProfile.address || !displayProfile.phone) {
@@ -331,11 +245,9 @@ export function useDashboardData() {
     } finally {
       setIsCheckingOut(false);
     }
-  }, [cartItems, isCustomOrder, handleCustomCheckout, displayProfile, refreshCart, showToast]);
+  }, [cartItems, displayProfile, refreshCart, showToast]);
 
   const reloadCartItems = useCallback(async () => {
-    if (isCustomOrder) return;
-
     try {
       const cartData = await apiFetch('/cart');
       setCartItems((cartData.items || []).map(mapCartItemFromApi));
@@ -343,7 +255,7 @@ export function useDashboardData() {
     } catch (err) {
       console.error('Failed to reload cart:', err);
     }
-  }, [isCustomOrder, refreshCart]);
+  }, [refreshCart]);
 
   const handleViewProduct = useCallback(
     async (productId) => {
@@ -433,10 +345,8 @@ export function useDashboardData() {
     userEmail: session?.user?.email || '',
     cartItems,
     orders,
-    orderNotice,
     isCheckingOut,
     isLoggingOut,
-    isCustomOrder,
     handleQuantityChange,
     handleRemoveCartItem,
     handleSaveProfile,
