@@ -19,7 +19,7 @@ import { useApi } from '@/components/providers/ApiProvider';
 import { useToast } from '@/components/providers/ToastProvider';
 import { loginPath } from '@/lib/auth-redirect';
 
-const CATEGORIES = ['ALL', 'HOBBY', 'FUNCTIONAL', 'CUSTOM', 'COSPLAY', 'MINIATURES'];
+const CATEGORIES = ['ALL', 'KEYCHAIN', 'LAMP', 'DESK ESSENTIAL', 'HOT WHEELS', 'ANIME FIGURES'];
 const MATERIAL_FILTERS = ['PLA+', 'PETG', 'TPU'];
 
 const SORT_OPTIONS = [

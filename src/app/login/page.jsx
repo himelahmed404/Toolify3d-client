@@ -11,6 +11,7 @@ import {
   getSafeNextPath,
   googleCallbackPath,
   registerPath,
+  forgotPasswordPath,
 } from "@/lib/auth-redirect";
 import {
   emailAccountExists,
@@ -112,12 +113,12 @@ function LoginForm() {
                 >
                   [ ACCESS_KEY ]
                 </label>
-                <button
-                  type="button"
+                <Link
+                  href={forgotPasswordPath(nextPath)}
                   className="text-xs font-mono text-brand hover:underline"
                 >
                   FORGOT?
-                </button>
+                </Link>
               </div>
               <div className="relative">
                 <input

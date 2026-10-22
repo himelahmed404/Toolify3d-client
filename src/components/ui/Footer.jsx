@@ -13,7 +13,7 @@ const exploreLinks = [
   { label: 'Pricing', href: '/pricing' },
   { label: 'Products', href: '/products' },
   { label: 'Gallery', href: '/products' },
-  { label: 'About', href: '/about' },
+  // { label: 'About', href: '/about' },
 ];
 
 const protocolLinks = [
@@ -151,8 +151,9 @@ export default function Footer() {
       <div className="footer-bottom border-t border-[#2A2A2A]">
         <div className="max-w-container-max mx-auto px-margin-page py-4 flex flex-col md:flex-row justify-between items-center gap-2">
           <p className="font-mono text-[11px] text-[#9E9E9E] uppercase tracking-wider">
-            © 2024 TOOLIFY 3D // 3D_UNIT_01
+            © 2026 TOOLIFY 3D // 3D_UNIT_01
           </p>
+          <p className='text-xs text-[#9e9e9ece]'>Developed by <Link href="https://www.linkedin.com/in/himelahmed404" className="text-[#1db954bc] hover:text-[#15883C] transition-colors duration-200">Himel Ahmed</Link></p>
           <p className="font-mono text-[11px] text-[#9E9E9E] uppercase tracking-wider">
             DESIGNED_FOR_PRECISION{' '}
             <span className="text-white font-bold">[V2.4.0]</span>

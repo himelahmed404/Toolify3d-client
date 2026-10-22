@@ -27,6 +27,10 @@ export function registerPath(next) {
   return withNextQuery("/register", next);
 }
 
+export function forgotPasswordPath(next) {
+  return withNextQuery("/forgot-password", next);
+}
+
 /** Google OAuth lands on complete-profile, then resumes via ?next= */
 export function googleCallbackPath(next) {
   const safe = getSafeNextPath(next, "/");
